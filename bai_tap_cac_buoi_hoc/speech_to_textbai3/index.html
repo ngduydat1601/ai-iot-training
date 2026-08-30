@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Web Translator</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #F0F4F8; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        h1 { color: #2C3E50; }
+        .container { display: flex; gap: 20px; width: 100%; max-width: 1000px; margin-bottom: 30px; }
+        .box { flex: 1; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-height: 250px; display: flex; flex-direction: column;}
+        .box h3 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
+        .box-vi h3 { color: #0072B2; }
+        .box-en h3 { color: #D55E00; }
+        .text-area { flex: 1; font-size: 18px; color: #333; line-height: 1.6; }
+        .btn-record { background: #28A745; color: white; border: none; padding: 15px 40px; font-size: 18px; font-weight: bold; border-radius: 50px; cursor: pointer; transition: 0.3s; }
+        .btn-record.recording { background: #DC3545; }
+        .btn-record.processing { background: #FFC107; color: black; pointer-events: none; }
+        .btn-replay { background: #007BFF; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>🎙️ HỆ THỐNG PHIÊN DỊCH REAL-TIME (WEB)</h1>
+    
+    <div class="container">
+        <!-- Khung Tiếng Việt -->
+        <div class="box box-vi">
+            <h3>🇻🇳 TIẾNG VIỆT</h3>
+            <div id="textVi" class="text-area">Đang chờ âm thanh...</div>
+        </div>
+
+        <!-- Khung Tiếng Anh -->
+        <div class="box box-en">
+            <h3>🌍 TIẾNG ANH <button id="btnReplay" class="btn-replay">🔊 Nghe lại</button></h3>
+            <div id="textEn" class="text-area">Bản dịch sẽ hiển thị ở đây...</div>
+        </div>
+    </div>
+
+    <!-- Nút Bấm -->
+    <button id="btnRecord" class="btn-record">🎙️ BẤM VÀ GIỮ ĐỂ NÓI</button>
+
+    <!-- Thẻ Audio tàng hình để phát tiếng -->
+    <audio id="audioPlayer" style="display: none;"></audio>
+
+    <script>
+        let ws;
+        let audioContext;
+        let mediaStream;
+        let scriptProcessor;
+        let isRecording = false;
+
+        const btnRecord = document.getElementById('btnRecord');
+        const btnReplay = document.getElementById('btnReplay');
+        const textVi = document.getElementById('textVi');
+        const textEn = document.getElementById('textEn');
+        const audioPlayer = document.getElementById('audioPlayer');
+
+        // Mở kết nối WebSocket tới Python Backend
+        function connectWebSocket() {
+            ws = new WebSocket("ws://localhost:8000/ws");
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                // Trạng thái múa chữ Real-time
+                if (data.type === "partial") {
+                    textVi.innerText = data.text + "...";
+                }
+                
+                // Trạng thái chốt kết quả và phát âm
+                if (data.type === "final") {
+                    textVi.innerText = data.text_vi;
+                    
+                    if (data.text_en) {
+                        textEn.innerText = data.text_en;
+                        // Chống cache trình duyệt bằng cách thêm mốc thời gian vào đuôi URL
+                        audioPlayer.src = data.audio_url + "?t=" + new Date().getTime();
+                        audioPlayer.play();
+                        btnReplay.style.display = "inline-block";
+                    } else {
+                        textEn.innerText = "⚠️ Không nghe rõ, vui lòng thử lại!";
+                    }
+                    
+                    // Khôi phục nút bấm
+                    btnRecord.innerText = "🎙️ BẤM VÀ GIỮ ĐỂ NÓI";
+                    btnRecord.className = "btn-record";
+                }
+            };
+        }
+        connectWebSocket();
+
+        // Xử lý sự kiện nhấn/nhả chuột để thu âm
+        btnRecord.addEventListener('mousedown', startRecording);
+        btnRecord.addEventListener('mouseup', stopRecording);
+        
+        // Dành cho điện thoại di động (Chạm cảm ứng)
+        btnRecord.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+        btnRecord.addEventListener('touchend', stopRecording);
+
+        btnReplay.addEventListener('click', () => {
+            audioPlayer.currentTime = 0;
+            audioPlayer.play();
+        });
+
+        async function startRecording() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) connectWebSocket();
+            
+            isRecording = true;
+            btnRecord.innerText = "🔴 ĐANG NGHE... (NHẢ RA ĐỂ DỊCH)";
+            btnRecord.className = "btn-record recording";
+            btnReplay.style.display = "none";
+            textVi.innerText = "";
+            textEn.innerText = "Đang xử lý...";
+
+            // Bật Micro và ép tần số lấy mẫu về 16000Hz cho chuẩn AI
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            const source = audioContext.createMediaStreamSource(mediaStream);
+            
+            // Chia nhỏ âm thanh thành các đoạn siêu nhỏ (4096 mẫu)
+            scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+            
+            scriptProcessor.onaudioprocess = function(e) {
+                if (!isRecording) return;
+                // Lấy mảng dữ liệu âm thanh số thực (Float32)
+                const float32Array = e.inputBuffer.getChannelData(0);
+                // Gửi thẳng cục dữ liệu thô này qua WebSocket cho Python
+                ws.send(float32Array.buffer);
+            };
+
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+            
+            btnRecord.innerText = "⏳ ĐANG DỊCH & PHÁT ÂM...";
+            btnRecord.className = "btn-record processing";
+
+            // Tắt Micro
+            if (scriptProcessor) scriptProcessor.disconnect();
+            if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+            if (audioContext) audioContext.close();
+
+            // Gửi cờ báo hiệu cho Python chốt kết quả
+            ws.send("STOP");
+        }
+    </script>
+</body>
+</html>

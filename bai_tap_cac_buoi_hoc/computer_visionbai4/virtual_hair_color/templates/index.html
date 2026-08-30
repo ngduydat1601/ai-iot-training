@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Hair Color Web</title>
+    <style>
+        body { background-color: #1a1a1a; color: white; text-align: center; font-family: Arial, sans-serif; }
+        .video-container { margin-top: 20px; border: 3px solid #444; border-radius: 10px; display: inline-block; overflow: hidden;}
+        
+    </style>
+</head>
+<body>
+
+    <h1>💇‍♀️ Thay đổi màu tóc</h1>
+    
+    <div class="video-container">
+        <!-- Gọi luồng video từ Flask truyền vào thẻ img -->
+        <img src="{{ url_for('video_feed') }}" width="640" height="480" alt="Video Stream">
+    </div>
+
+    <!-- Khu vực tự pha màu tùy chỉnh (RGB) -->
+    <div style="margin-top: 30px; background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: inline-block;">
+        <h3 style="color: #00ffcc; margin-top: 0;">🎨 Tự Pha Màu (Tùy Chỉnh)</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 15px; align-items: flex-end;">
+            <!-- Thanh Đỏ (Red) -->
+            <div>
+                <label style="color: #ff6666; font-weight: bold;">Đỏ (R): <span id="rValue" style="display:inline-block; width: 30px;">131</span></label>
+                <!-- Chuyển sendCustomColor vào oninput -->
+                <input type="range" id="rSlider" min="0" max="255" value="131" style="width: 250px; cursor: pointer;" 
+                       oninput="updateCustomColor(); sendCustomColor()">
+            </div>
+            
+            <!-- Thanh Xanh lá (Green) -->
+            <div>
+                <label style="color: #66ff66; font-weight: bold;">Xanh lá (G): <span id="gValue" style="display:inline-block; width: 30px;">142</span></label>
+                <input type="range" id="gSlider" min="0" max="255" value="142" style="width: 250px; cursor: pointer;" 
+                       oninput="updateCustomColor(); sendCustomColor()">
+            </div>
+
+            <!-- Thanh Xanh dương (Blue) -->
+            <div>
+                <label style="color: #66ccff; font-weight: bold;">Xanh dương (B): <span id="bValue" style="display:inline-block; width: 30px;">172</span></label>
+                <input type="range" id="bSlider" min="0" max="255" value="172" style="width: 250px; cursor: pointer;" 
+                       oninput="updateCustomColor(); sendCustomColor()">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Hàm 1: Cập nhật con số hiển thị khi đang kéo thanh trượt
+        function updateCustomColor() {
+            document.getElementById('rValue').innerText = document.getElementById('rSlider').value;
+            document.getElementById('gValue').innerText = document.getElementById('gSlider').value;
+            document.getElementById('bValue').innerText = document.getElementById('bSlider').value;
+        }
+
+        // Hàm 2: Gửi 3 giá trị màu về cho Python (Lưu ý: Màn hình dùng RGB, nhưng Python dùng BGR)
+        function sendCustomColor() {
+            const r = document.getElementById('rSlider').value;
+            const g = document.getElementById('gSlider').value;
+            const b = document.getElementById('bSlider').value;
+
+            const formData = new FormData();
+            formData.append('b', b); // Gửi B trước
+            formData.append('g', g); // Gửi G
+            formData.append('r', r); // Gửi R
+
+            fetch('/set_custom_color', {
+                method: 'POST',
+                body: formData
+            }).then(response => console.log(`Đã gửi màu pha: B=${b}, G=${g}, R=${r}`));
+        }
+        // Cập nhật con số % hiển thị ngay khi đang kéo
+        function updateAlphaValue(val) {
+            document.getElementById('alphaValue').innerText = Math.round(val * 100) + "%";
+        }
+
+        // Gửi lệnh thay đổi độ đậm nhạt về cho Python
+        function sendAlphaCommand(val) {
+            const formData = new FormData();
+            formData.append('alpha', val);
+            fetch('/set_alpha', {
+                method: 'POST',
+                body: formData
+            }).then(response => console.log('Đã đổi độ đậm: ' + val));
+        }
+    </script>
+
+</body>
+</html>

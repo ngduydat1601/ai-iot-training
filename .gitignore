@@ -147,6 +147,15 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# AI model files
+*.pt
+*.onnx
+*.onnx.json
+*.bin
+*.pth
+*.h5
+*.safetensors
+
 # Environments
 .env
 .envrc
